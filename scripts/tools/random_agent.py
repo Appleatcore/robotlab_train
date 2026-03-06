@@ -11,6 +11,7 @@
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import time
 
 from isaaclab.app import AppLauncher
 
@@ -58,16 +59,40 @@ def main():
     # print info (this is vectorized environment)
     print(f"[INFO]: Gym observation space: {env.observation_space}")
     print(f"[INFO]: Gym action space: {env.action_space}")
+
+    # 每个 env.step() 对应的仿真时间
+    env_step_dt = env_cfg.sim.dt * env_cfg.decimation
+    print(f"[INFO]: sim dt = {env_cfg.sim.dt}, decimation = {env_cfg.decimation}, env_step_dt = {env_step_dt}")
+
     # reset environment
     env.reset()
+
+    # 统计量
+    step_count = 0
+    wall_start_time = time.perf_counter()
+
     # simulate environment
     while simulation_app.is_running():
         # run everything in inference mode
         with torch.inference_mode():
             # sample actions from -1 to 1
-            actions = 2 * torch.rand(env.action_space.shape, device=env.unwrapped.device) - 1
+            actions = 2 * torch.rand(env.action_space.shape, device=env.unwrapped.device) - 1   
             # apply actions
             env.step(actions)
+
+            # 统计并打印
+            step_count += 1
+            sim_time = step_count * env_step_dt
+            wall_time = time.perf_counter() - wall_start_time
+            rtf = sim_time / wall_time if wall_time > 0 else 0.0
+
+            if step_count == 1 or step_count % 50 == 0:
+                print(
+                    f"[RTF] step={step_count}, "
+                    f"sim_time={sim_time:.3f}s, "
+                    f"wall_time={wall_time:.3f}s, "
+                    f"RTF={rtf:.3f}"
+                )
 
     # close the simulator
     env.close()
