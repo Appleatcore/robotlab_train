@@ -63,6 +63,9 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
         "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
     ]
+    hip_joint_names = [
+        "FR_hip_joint", "FL_hip_joint", "RR_hip_joint", "RL_hip_joint",
+    ]
     wheel_joint_names = [
         "FR_foot_joint", "FL_foot_joint", "RR_foot_joint", "RL_foot_joint",
     ]
@@ -169,6 +172,8 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.stand_still.params["asset_cfg"].joint_names = self.leg_joint_names
         self.rewards.joint_pos_penalty.weight = -1.0
         self.rewards.joint_pos_penalty.params["asset_cfg"].joint_names = self.leg_joint_names
+        self.rewards.default_hip_joint_pos.weight = -0.05
+        self.rewards.default_hip_joint_pos.params["hip_asset_cfg"].joint_names = self.hip_joint_names
         self.rewards.wheel_vel_penalty.weight = 0
         self.rewards.wheel_vel_penalty.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.wheel_vel_penalty.params["asset_cfg"].joint_names = self.wheel_joint_names

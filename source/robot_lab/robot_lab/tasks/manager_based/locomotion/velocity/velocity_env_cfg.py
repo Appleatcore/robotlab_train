@@ -454,6 +454,20 @@ class RewardsCfg:
         },
     )
 
+    default_hip_joint_pos = RewTerm(
+        func=mdp.default_hip_joint_pos,
+        weight=0.0,
+        params={
+            "hip_asset_cfg": SceneEntityCfg("robot", joint_names=""),
+            "base_asset_cfg": SceneEntityCfg("robot"),
+            "command_name": "base_velocity",
+            "command_threshold": 0.1,
+            "velocity_threshold": 0.5,
+            "upward_threshold": 0.75,
+            "stand_still_scale": 5.0,
+        },
+    )
+
     wheel_vel_penalty = RewTerm(
         func=mdp.wheel_vel_penalty,
         weight=0.0,

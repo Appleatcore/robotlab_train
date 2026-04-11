@@ -129,6 +129,62 @@ def joint_pos_penalty(
     return reward
 
 
+def default_hip_joint_pos(
+    env: ManagerBasedRLEnv,
+    hip_asset_cfg: SceneEntityCfg,
+    base_asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "base_velocity",
+    command_threshold: float = 0.0,
+    velocity_threshold: float = 0.0,
+    upward_threshold: float = 0.75,
+    stand_still_scale: float = 5.0
+) -> torch.Tensor:
+    """
+    最小化 hip 偏离默认位置
+     - 站立门控
+     - 静止(指令)时放大偏差
+
+    Args:
+        env (ManagerBasedRLEnv): _description_
+        hip_asset_cfg (SceneEntityCfg): _description_
+        base_asset_cfg (SceneEntityCfg): _description_
+        command_name (str): _description_
+        upward_threshold (float, optional): _description_. Defaults to 0.75.
+        velocity_threshold (float, optional): _description_. Defaults to 0.15.
+
+    Returns:
+        torch.Tensor: _description_
+    """
+    base_asset: RigidObject = env.scene[base_asset_cfg.name]
+    hip_asset: Articulation = env.scene[hip_asset_cfg.name]
+
+    # 累加每个关节的偏离绝对值, TODO: 目前默认关节角度硬编码为0
+    hip_joint_diff_sum = torch.sum(
+        torch.square(hip_asset.data.joint_pos[:, hip_asset_cfg.joint_ids]),
+        dim=1
+    )
+
+    # 站立门控
+    # 趋近-1立, 趋近1倒
+    gravity_scale = -base_asset.data.projected_gravity_b[:, 2] > upward_threshold
+
+    # 静止时放大偏差
+    cmd = torch.linalg.norm(env.command_manager.get_command(command_name), dim=1)
+    lin_vel = torch.linalg.norm(env.command_manager.get_command(command_name)[:, :2], dim=1)
+    move_scale = torch.where(
+        torch.logical_or(
+            cmd > command_threshold,
+            lin_vel > velocity_threshold,
+        ),
+        torch.ones_like(hip_joint_diff_sum),
+        stand_still_scale * torch.ones_like(hip_joint_diff_sum),
+    )
+
+    reward = hip_joint_diff_sum * gravity_scale * move_scale
+
+    return reward
+
+
 def wheel_vel_penalty(
     env: ManagerBasedRLEnv,
     sensor_cfg: SceneEntityCfg,
