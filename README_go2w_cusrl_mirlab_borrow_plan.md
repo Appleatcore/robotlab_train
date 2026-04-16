@@ -45,20 +45,20 @@
 
 所以这份计划的顺序是：
 
-1. 先借 `reset + contact + posture`
-2. 再小幅借 `stair-contact rewards`
-3. 再补 finer tracking
-4. 再决定要不要做 `height_scan` 的 sim-only 分支
-5. 最后再考虑 trainer hooks
+1. 先借 `reset`
+2. 再单独测试 `illegal_contact`
+3. 再小幅借 `stair-contact rewards`
+4. 再补 finer tracking
+5. 再决定要不要做 `height_scan` 的 sim-only 分支
+6. 最后再考虑 trainer hooks
 
-## Round 1: Reset + Contact + Posture
+## Round 1: Reset Only
 
 目标：
 
 - 减少 recovery 训练成分
-- 提高对 `base/hip` 擦地的约束
-- 放松当前偏强的回中项
-- 适度增加机身姿态约束
+- 先单独验证更温和的 reset 是否能提升早期课程稳定性
+- 暂时不引入 `illegal_contact`，避免把“reset 改动”和“终止逻辑改动”混在一起
 
 修改文件：
 
@@ -69,6 +69,7 @@
 1. 修改 `randomize_reset_base.params["pose_range"]`
 
 位置：
+
 - `rough_env_cfg.py:109`
 
 当前：
@@ -96,6 +97,7 @@
 2. 修改 `randomize_reset_base.params["velocity_range"]`
 
 位置：
+
 - `rough_env_cfg.py:118`
 
 当前：
@@ -120,61 +122,53 @@
 "yaw": (-0.5, 0.5),
 ```
 
-3. 打开 `flat_orientation_l2`
+训练命令：
+
+```bash
+python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement_learning/cusrl/train.py \
+  --task RobotLab-Isaac-Velocity-Rough-Unitree-Go2W-v0 \
+  --agent cusrl_rsl_aligned_cfg_entry_point \
+  --seed 42 \
+  --run_name mirlab_round1_reset_only \
+  --headless
+```
+
+## Round 1.5: Conservative `illegal_contact`
+
+前提：
+
+- 先完成 `Round 1` 的 reset-only 训练
+- 再单独测试 `illegal_contact` 对课程推进和楼梯稳定性的影响
+- 这一步不要直接照抄 MIRLab 的 `base + hip + threshold=1.0`
+- 先做一个更保守的版本，避免训练一开始就被频繁提前终止
+
+修改文件：
+
+- `/home/applepie/project_for_test/go2w_demo/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/rough_env_cfg.py`
+
+具体改动：
+
+1. 保持 `self.rewards.is_terminated.weight = 0`
 
 位置：
-- `rough_env_cfg.py:141`
+
+- `rough_env_cfg.py:139`
 
 当前：
 
 ```python
-self.rewards.flat_orientation_l2.weight = 0
+self.rewards.is_terminated.weight = 0
 ```
 
-建议：
+说明：
 
-```python
-self.rewards.flat_orientation_l2.weight = -1.0
-```
+- 这一项保持不变，不额外给终止惩罚
 
-4. 放松 `stand_still`
+2. 恢复 `illegal_contact`，但先只监控 `base`
 
 位置：
-- `rough_env_cfg.py:168`
 
-当前：
-
-```python
-self.rewards.stand_still.weight = -2.0
-```
-
-建议：
-
-```python
-self.rewards.stand_still.weight = -0.5
-```
-
-5. 放松 `joint_pos_penalty`
-
-位置：
-- `rough_env_cfg.py:170`
-
-当前：
-
-```python
-self.rewards.joint_pos_penalty.weight = -1.0
-```
-
-建议：
-
-```python
-self.rewards.joint_pos_penalty.weight = -0.15
-```
-
-6. 恢复 `illegal_contact`
-
-位置：
-- `rough_env_cfg.py:222`
+- `rough_env_cfg.py:227`
 
 当前：
 
@@ -186,10 +180,21 @@ self.terminations.illegal_contact = None
 建议：
 
 ```python
-self.terminations.illegal_contact.params["sensor_cfg"].body_names = [self.base_link_name, ".*_hip"]
+self.terminations.illegal_contact.params["sensor_cfg"].body_names = [self.base_link_name]
+# 同时把 threshold 从默认 1.0 提高到更宽松的值，例如 20.0 或 50.0
+self.terminations.illegal_contact.params["threshold"] = 20.0
 # 删除或注释掉下面这一行
 # self.terminations.illegal_contact = None
 ```
+
+原因：
+
+- 直接使用 `base + hip` 且 `threshold=1.0` 太激进
+- 在楼梯 early stage，base 或 hip 很容易轻微擦碰
+- 这样会让 episode 太早结束，XY 位移不够，课程会频繁 `move_down`
+- 所以第一轮 `illegal_contact` 建议先只看 `base`
+- `hip` 是否要加回去，放到后续再单独测试
+- `threshold` 也不要直接用 `1.0`，先从 `20.0` 起步更稳
 
 训练命令：
 
@@ -198,7 +203,7 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
   --task RobotLab-Isaac-Velocity-Rough-Unitree-Go2W-v0 \
   --agent cusrl_rsl_aligned_cfg_entry_point \
   --seed 42 \
-  --run_name mirlab_round1_reset_contact_posture \
+  --run_name mirlab_round1p5_illegal_contact_base_only \
   --headless
 ```
 
@@ -217,6 +222,7 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 1. 增强 `wheel_vel_penalty`
 
 位置：
+
 - `rough_env_cfg.py:172`
 
 当前：
@@ -234,6 +240,7 @@ self.rewards.wheel_vel_penalty.weight = -0.0015
 2. 增强 `feet_stumble`
 
 位置：
+
 - `rough_env_cfg.py:202`
 
 当前：
@@ -251,6 +258,7 @@ self.rewards.feet_stumble.weight = -0.1
 3. 增强 `feet_slide`
 
 位置：
+
 - `rough_env_cfg.py:204`
 
 当前：
@@ -301,6 +309,7 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 1. 新增 `track_lin_vel_xy_exp_fine`
 
 位置：
+
 - 在 `velocity_env_cfg.py:526` 的 `track_lin_vel_xy_exp` 后
 - 在 `velocity_env_cfg.py:529` 的 `track_ang_vel_z_exp` 前
 
@@ -317,6 +326,7 @@ track_lin_vel_xy_exp_fine = RewTerm(
 2. 调整 tracking 权重
 
 位置：
+
 - `rough_env_cfg.py:191`
 
 当前：
@@ -362,6 +372,7 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 具体改动：
 
 位置：
+
 - `rough_env_cfg.py:95`
 
 当前：
@@ -398,6 +409,7 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 具体改动：
 
 位置：
+
 - `cusrl_ppo_cfg.py:73`
 
 当前：
@@ -452,10 +464,11 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 严格按下面顺序做：
 
 1. Round 1
-2. 如果楼梯明显更稳，再做 Round 2
-3. 如果楼梯稳了但速度和连续性一般，再做 Round 3
-4. 如果想验证 MIRLab 的 `height_scan` 贡献，再做 Round 4
-5. 最后再做 Round 5
+2. Round 1.5
+3. 如果楼梯明显更稳，再做 Round 2
+4. 如果楼梯稳了但速度和连续性一般，再做 Round 3
+5. 如果想验证 MIRLab 的 `height_scan` 贡献，再做 Round 4
+6. 最后再做 Round 5
 
 ## TensorBoard 重点看什么
 
