@@ -28,6 +28,9 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:UnitreeGo2WRoughEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:UnitreeGo2WRoughPPORunnerCfg",
+        "rsl_rl_heightmap_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_ppo_cfg:UnitreeGo2WHeightMapEncoderPPORunnerCfg"
+        ),
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:UnitreeGo2WRoughTrainerCfg",
         "cusrl_rsl_aligned_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:UnitreeGo2WRoughTrainerRslAlignedCfg",
     },

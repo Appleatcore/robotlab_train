@@ -97,11 +97,21 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import robot_lab.tasks  # noqa: F401  # isort: skip
+from robot_lab.heightmap_relate import register_heightmap_actor_critic  # isort: skip
+
+register_heightmap_actor_critic()
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from rl_utils import camera_follow
 
 # PLACEHOLDER: Extension template (do not remove this comment)
+
+
+def _agent_cfg_to_runner_dict(agent_cfg: RslRlBaseRunnerCfg) -> dict:
+    agent_cfg_dict = agent_cfg.to_dict()
+    if version.parse(installed_version) < version.parse("4.0.0"):
+        agent_cfg_dict.get("algorithm", {}).pop("share_cnn_encoders", None)
+    return agent_cfg_dict
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -195,10 +205,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     # load previously trained model
+    agent_cfg_dict = _agent_cfg_to_runner_dict(agent_cfg)
     if agent_cfg.class_name == "OnPolicyRunner":
-        runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+        runner = OnPolicyRunner(env, agent_cfg_dict, log_dir=None, device=agent_cfg.device)
     elif agent_cfg.class_name == "DistillationRunner":
-        runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+        runner = DistillationRunner(env, agent_cfg_dict, log_dir=None, device=agent_cfg.device)
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
     runner.load(resume_path)

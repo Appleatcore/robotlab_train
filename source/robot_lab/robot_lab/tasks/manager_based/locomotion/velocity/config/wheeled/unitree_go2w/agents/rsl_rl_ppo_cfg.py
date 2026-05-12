@@ -7,11 +7,20 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 
 @configclass
+class RslRlPpoHeightMapActorCriticCfg(RslRlPpoActorCriticCfg):
+    class_name: str = "HeightMapActorCritic"
+    heightmap_shape: tuple[int, int] = (11, 17)
+    heightmap_channels: int = 1
+    heightmap_latent_dim: int = 64
+
+
+@configclass
 class UnitreeGo2WRoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 20000
     save_interval = 100
     experiment_name = "unitree_go2w_rough"
+    obs_groups = {"policy": ["policy"], "critic": ["critic"]}
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_obs_normalization=False,
@@ -33,6 +42,22 @@ class UnitreeGo2WRoughPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         lam=0.95,
         desired_kl=0.01,
         max_grad_norm=1.0,
+    )
+
+
+@configclass
+class UnitreeGo2WHeightMapEncoderPPORunnerCfg(UnitreeGo2WRoughPPORunnerCfg):
+    experiment_name = "unitree_go2w_rough_heightmap_encoder"
+    policy = RslRlPpoHeightMapActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[512, 256, 128],
+        critic_hidden_dims=[512, 256, 128],
+        activation="elu",
+        heightmap_shape=(11, 17),
+        heightmap_channels=1,
+        heightmap_latent_dim=64,
     )
 
 
