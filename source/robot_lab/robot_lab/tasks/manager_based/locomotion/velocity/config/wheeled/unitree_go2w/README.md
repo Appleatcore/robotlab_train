@@ -85,3 +85,14 @@ That means it will still load the original Go2W CusRL config, not the new RSL-al
   - joint_mirror: -0.05 -> -0.01
   - action_rate_l2: -0.01 -> -0.003
   - contact_forces: -1.5e-4 -> -7e-5
+
+## Radar Observation + StepIt Alignment
+
+- `rough_env_cfg.py` now anchors `scene.height_scanner` to `Robot/radar` instead of `Robot/base`.
+- `go2w_description.urdf` sets `radar_joint` as `dont_collapse="true"` so the `radar` frame is preserved when fixed joints are merged.
+- `scene.height_scanner_base` remains on `Robot/base` for base-height related rewards.
+
+StepIt alignment note:
+
+- StepIt does not consume a URDF radar link directly; it consumes terrain perception as `heightmap` field (`policy_neuro_ros/heightmap_subscriber` from `grid_map_msgs/GridMap`).
+- For a perception-enabled actor exported from this env, append `heightmap` in StepIt `actor.yml` observation fields after proprioceptive terms, with size matching the training `height_scan` sample count.

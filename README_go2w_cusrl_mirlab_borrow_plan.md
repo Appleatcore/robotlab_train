@@ -459,6 +459,176 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
   --headless
 ```
 
+## V3: 已执行的合并版训练配置
+
+这版不是继续沿着 `step_reward_bundle_v2` 的“更大动作、更少惩罚”方向走，而是根据 MIRLab 和 v2 TensorBoard 结果做一次收敛型修正。
+
+核心判断：
+
+- v2 的 `joint_pos.scale = {hip: 0.18, other: 0.36}` 太大，8000 轮时 `action_std` 仍偏高，play 动作容易发散。
+- v2 的 `action_rate_l2=-0.0015` 太弱，不利于连续上阶时动作丝滑。
+- v2 的 `feet_air_time` 在 TensorBoard 中是负项，说明它没有形成有效的“主动抬腿”正激励。
+- MIRLab 更像是通过接触质量、滑动约束、轮子空转约束和更平滑的动作来得到稳定楼梯行为，而不是靠强行增大腿部动作范围。
+
+已修改文件：
+
+- `/home/applepie/project_for_test/go2w_demo/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/velocity_env_cfg.py`
+- `/home/applepie/project_for_test/go2w_demo/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/rough_env_cfg.py`
+- `/home/applepie/project_for_test/go2w_demo/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/agents/cusrl_ppo_cfg.py`
+
+### V3 具体改动
+
+1. 回收腿部动作尺度
+
+```python
+self.actions.joint_pos.scale = {".*_hip_joint": 0.15, "^(?!.*_hip_joint).*": 0.3}
+```
+
+说明：
+
+- 不回到最原始的 `0.125 / 0.25`
+- 也不沿用 v2 的 `0.18 / 0.36`
+- 先取 v1 的中间值，兼顾台阶 clearance 和 sim2sim 可跟踪性
+
+2. 使用更温和 reset
+
+```python
+"z": (0.0, 0.05),
+"roll": (0.0, 0.0),
+"pitch": (0.0, 0.0),
+```
+
+```python
+"z": (-0.2, 0.2),
+"roll": (-0.2, 0.2),
+"pitch": (-0.2, 0.2),
+```
+
+目的：
+
+- 减少一开始就从大 roll/pitch 恢复的训练成分
+- 把训练能力更多放到正常运动和过阶上
+
+3. 启用保守 illegal contact
+
+```python
+self.terminations.illegal_contact.params["sensor_cfg"].body_names = [self.base_link_name]
+self.terminations.illegal_contact.params["threshold"] = 20.0
+```
+
+说明：
+
+- 先只监控 base，不监控 hip
+- 不使用 MIRLab 的 `threshold=1.0`
+- 目标是减少趴地/撞台阶硬顶的样本，但不让 early training 过早终止
+
+4. 增加 finer velocity tracking
+
+在 `velocity_env_cfg.py` 中新增：
+
+```python
+track_lin_vel_xy_exp_fine = RewTerm(
+    func=mdp.track_lin_vel_xy_exp,
+    weight=0.0,
+    params={"command_name": "base_velocity", "std": 0.2},
+)
+```
+
+在 Go2W rough 配置中启用：
+
+```python
+self.rewards.track_lin_vel_xy_exp.weight = 1.5
+self.rewards.track_lin_vel_xy_exp_fine.weight = 1.0
+self.rewards.track_ang_vel_z_exp.weight = 1.0
+```
+
+目的：
+
+- 借 MIRLab 的双层 tracking 思路
+- 避免 v2 单纯把 `track_lin_vel_xy_exp` 加到 `4.0` 后 reward 被速度项主导
+
+5. 移除 v2 中效果不明确的强制抬腿项
+
+```python
+self.rewards.feet_air_time.weight = 0
+self.rewards.feet_height_body.weight = 0
+```
+
+原因：
+
+- `feet_air_time` 在 v2 日志中仍为负
+- `feet_height_body` 数值量级太小，不能稳定驱动高台阶行为
+- 暂时不再用这两个项解释“主动上台阶”
+
+6. 借 MIRLab 的接触质量方向，但不照抄强度
+
+```python
+self.rewards.wheel_vel_penalty.weight = -0.0015
+self.rewards.feet_stumble.weight = -0.1
+self.rewards.feet_slide.weight = -0.05
+```
+
+说明：
+
+- 比 v2 更重视脚滑、踢台阶和离地轮子空转
+- 但明显弱于 MIRLab 的 `-0.01 / -1.0 / -0.2`
+- 避免把平地轮式滚动行为一起压掉
+
+7. 恢复动作平滑和执行友好性
+
+```python
+self.rewards.action_rate_l2.weight = -0.01
+self.rewards.joint_vel_l2.weight = -5e-4
+self.rewards.joint_vel_wheel_l2.weight = -5e-5
+```
+
+目的：
+
+- v2 的动作太自由，早期策略容易乱
+- v3 重新强调连续动作和关节速度不要过大
+
+8. 降低 rsl-aligned entropy
+
+```python
+cusrl.hook.EntropyLoss(weight=0.005)
+```
+
+原因：
+
+- v2 8000 轮 `action_std` 仍偏高
+- MIRLab CusRL 配置使用 `0.005`
+- 这项不改变网络结构，仍保持 MLP 和当前 StepIt 导出链路
+
+### V3 训练命令
+
+```bash
+python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement_learning/cusrl/train.py \
+  --task RobotLab-Isaac-Velocity-Rough-Unitree-Go2W-v0 \
+  --agent cusrl_rsl_aligned_cfg_entry_point \
+  --seed 42 \
+  --run_name mirlab_borrow_v3_contact_smooth_tracking \
+  --headless
+```
+
+### V3 TensorBoard 判断标准
+
+优先看：
+
+- `Agent/action_std`：应比 v2 更快下降，目标先看是否低于 `1.3`
+- `Environment/Metrics/base_velocity/error_vel_xy`
+- `Environment/Metrics/base_velocity/error_vel_yaw`
+- `Environment/Curriculum/terrain_levels`
+- `Environment/Episode_Reward/feet_stumble`
+- `Environment/Episode_Reward/feet_slide`
+- `Environment/Episode_Reward/wheel_vel_penalty`
+- `Environment/Episode_Termination/illegal_contact`
+
+判断：
+
+- 如果 `action_std` 下降、速度误差下降、terrain level 上升，说明 v3 方向比 v2 稳。
+- 如果 `wheel_vel_penalty / feet_slide / feet_stumble` 过重导致平地轮子不滚，需要下调这三个权重。
+- 如果 illegal contact 很高，先把 threshold 从 `20.0` 放宽到 `50.0`，不要直接关闭所有接触终止。
+
 ## 建议执行顺序
 
 严格按下面顺序做：

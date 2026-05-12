@@ -32,6 +32,12 @@ parser.add_argument(
     help="Whether to run the agent in stochastic mode.",
 )
 parser.add_argument("--keyboard", action="store_true", default=False, help="Whether to use keyboard.")
+parser.add_argument(
+    "--debug_obs",
+    action="store_true",
+    default=False,
+    help="Print policy observation config/runtime stats (including height_scan) before playing.",
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -104,7 +110,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.observations.policy.enable_corruption = False
     # remove random pushing
     env_cfg.events.randomize_apply_external_force_torque = None
-    env_cfg.events.push_robot = None
+    # NOTE: the event term in this task is named `randomize_push_robot`, not `push_robot`.
+    if hasattr(env_cfg.events, "randomize_push_robot"):
+        env_cfg.events.randomize_push_robot = None
+    if hasattr(env_cfg.events, "push_robot"):
+        env_cfg.events.push_robot = None
     env_cfg.curriculum.command_levels_lin_vel = None
     env_cfg.curriculum.command_levels_ang_vel = None
 
@@ -134,6 +144,53 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    if args_cli.debug_obs:
+        print("[OBS-DEBUG] policy.height_scan is None:", env_cfg.observations.policy.height_scan is None)
+        if env_cfg.scene.height_scanner is not None:
+            print("[OBS-DEBUG] height_scanner.prim_path:", env_cfg.scene.height_scanner.prim_path)
+            print("[OBS-DEBUG] height_scanner.mesh_prim_paths:", env_cfg.scene.height_scanner.mesh_prim_paths)
+        else:
+            print("[OBS-DEBUG] height_scanner is None")
+
+        obs_mgr = env.unwrapped.observation_manager
+        if "policy" in obs_mgr.active_terms:
+            print("[OBS-DEBUG] policy terms:", obs_mgr.active_terms["policy"])
+            print("[OBS-DEBUG] policy term dims:", obs_mgr.group_obs_term_dim["policy"])
+            print("[OBS-DEBUG] policy concatenated dim:", obs_mgr.group_obs_dim["policy"])
+
+            reset_out = env.reset()
+            # Gymnasium reset returns (obs, info)
+            obs = reset_out[0] if isinstance(reset_out, tuple) else reset_out
+            policy_obs = obs.get("policy", obs) if isinstance(obs, dict) else obs
+
+            if isinstance(policy_obs, torch.Tensor):
+                print(
+                    "[OBS-DEBUG] policy obs shape/min/max:",
+                    tuple(policy_obs.shape),
+                    float(policy_obs.min().item()),
+                    float(policy_obs.max().item()),
+                )
+
+                # Slice out height_scan from concatenated policy obs for quick sanity check.
+                if (
+                    obs_mgr.group_obs_concatenate.get("policy", False)
+                    and "height_scan" in obs_mgr.active_terms["policy"]
+                ):
+                    term_names = obs_mgr.active_terms["policy"]
+                    term_dims = obs_mgr.group_obs_term_dim["policy"]
+                    hs_idx = term_names.index("height_scan")
+                    hs_start = sum(int(d[-1]) for d in term_dims[:hs_idx])
+                    hs_size = int(term_dims[hs_idx][-1])
+                    hs = policy_obs[..., hs_start : hs_start + hs_size]
+                    print(
+                        "[OBS-DEBUG] height_scan slice shape/min/max/mean/std:",
+                        tuple(hs.shape),
+                        float(hs.min().item()),
+                        float(hs.max().item()),
+                        float(hs.mean().item()),
+                        float(hs.std().item()),
+                    )
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
