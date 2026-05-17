@@ -53,6 +53,45 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 --run_name hip_default_pos_m005
 ```
 
+## 2026-05-17 RSL-RL 环境排查记录
+
+今天在服务器 `env_isaaclab` 环境中运行 RSL-RL 高程图编码训练时，默认安装的版本是：
+
+```text
+rsl-rl-lib == 5.0.1
+```
+
+启动命令为：
+
+```bash
+python scripts/reinforcement_learning/rsl_rl/train.py \
+  --task RobotLab-Isaac-Velocity-Rough-Unitree-Go2W-v0 \
+  --agent rsl_rl_heightmap_cfg_entry_point \
+  --num_envs 4096 \
+  --max_iterations 20000 \
+  --headless
+```
+
+报错信息为：
+
+```text
+ModuleNotFoundError: No module named 'rsl_rl.networks'
+```
+
+排查后确认：当前自定义的 `HeightMapActorCritic` 里使用了旧版/另一版 RSL-RL 的导入路径：
+
+```python
+from rsl_rl.networks import EmpiricalNormalization, MLP
+```
+
+但服务器默认的 `rsl-rl-lib == 5.0.1` 中没有 `rsl_rl.networks` 模块。执行下面命令降级后，训练可以正常启动：
+
+```bash
+pip install rsl-rl-lib==3.0.1
+```
+
+因此当前高程图编码策略训练需要使用 `rsl-rl-lib == 3.0.1`，或者后续将自定义网络迁移到 RSL-RL 5.x 的新接口。
+
 ## 结论
 
 这次新增的 hip 约束是有效的，值得保留。  
