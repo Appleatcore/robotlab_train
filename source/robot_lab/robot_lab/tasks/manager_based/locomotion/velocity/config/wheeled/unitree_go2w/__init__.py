@@ -33,5 +33,9 @@ gym.register(
         ),
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:UnitreeGo2WRoughTrainerCfg",
         "cusrl_rsl_aligned_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:UnitreeGo2WRoughTrainerRslAlignedCfg",
+        # 新 CusRL 高程图编码入口：不覆盖默认 cusrl 配置，方便单独跑对照实验。
+        "cusrl_heightmap_cfg_entry_point": (
+            f"{agents.__name__}.cusrl_ppo_cfg:UnitreeGo2WRoughTrainerHeightMapEncoderCfg"
+        ),
     },
 )

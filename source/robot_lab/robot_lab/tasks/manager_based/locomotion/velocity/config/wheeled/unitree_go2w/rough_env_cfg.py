@@ -79,6 +79,7 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # ------------------------------Sence------------------------------
         self.scene.robot = UNITREE_GO2W_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot.spawn.usd_dir = "/tmp/IsaacLab_ycl/unitree_go2w"
         # Radar is imported under base ("/Robot/base/radar"), so bind scanner there.
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/" + self.base_link_name + "/" + self.radar_link_name
         # Keep the base-centered scanner for base-height related shaping terms.

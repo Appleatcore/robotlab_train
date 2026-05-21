@@ -38,6 +38,24 @@ parser.add_argument(
     default=False,
     help="Print policy observation config/runtime stats (including height_scan) before playing.",
 )
+parser.add_argument(
+    "--debug_obs_interval",
+    type=int,
+    default=100,
+    help="Print runtime height_scan stats every N play steps when --debug_obs is enabled.",
+)
+parser.add_argument(
+    "--debug_obs_values",
+    action="store_true",
+    default=False,
+    help="Print the full flattened policy height_scan values when --debug_obs is enabled.",
+)
+parser.add_argument(
+    "--debug_obs_grid",
+    action="store_true",
+    default=False,
+    help="Print the policy height_scan values reshaped as an 11x17 grid when --debug_obs is enabled.",
+)
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -84,6 +102,98 @@ from rl_utils import camera_follow
 class CameraFollowPlayerHook(cusrl.Player.Hook):
     def step(self, step: int, transition: dict, metrics: dict):
         camera_follow(self.player.environment)
+
+
+class HeightScanDebugPlayerHook(cusrl.Player.Hook):
+    def __init__(self, interval: int = 100, print_values: bool = False, print_grid: bool = False):
+        self.interval = max(1, int(interval))
+        self.print_values = print_values
+        self.print_grid = print_grid
+        self._obs_mgr = None
+        self._height_scan_start = None
+        self._height_scan_size = None
+
+    def init(self, player):
+        super().init(player)
+        self._obs_mgr = player.environment.unwrapped.observation_manager
+        term_names = self._obs_mgr.active_terms.get("policy", [])
+        if not self._obs_mgr.group_obs_concatenate.get("policy", False) or "height_scan" not in term_names:
+            return
+
+        term_dims = self._obs_mgr.group_obs_term_dim["policy"]
+        hs_idx = term_names.index("height_scan")
+        self._height_scan_start = sum(int(dim[-1]) for dim in term_dims[:hs_idx])
+        self._height_scan_size = int(term_dims[hs_idx][-1])
+
+    def step(self, step: int, transition: dict, metrics: dict):
+        if step % self.interval != 0:
+            return
+        if self._height_scan_start is None or self._height_scan_size is None:
+            return
+
+        sensor = self.player.environment.unwrapped.scene.sensors["height_scanner"]
+        sensor_z = sensor.data.pos_w[:, 2]
+        hit_z = sensor.data.ray_hits_w[..., 2]
+        raw_height_scan = sensor_z.unsqueeze(1) - hit_z - 0.5
+        print(
+            "[OBS-DEBUG] raw sensor_z shape/min/max/mean:",
+            tuple(sensor_z.shape),
+            float(sensor_z.min().item()),
+            float(sensor_z.max().item()),
+            float(sensor_z.mean().item()),
+        )
+        print(
+            "[OBS-DEBUG] raw hit_z shape/min/max/mean/std:",
+            tuple(hit_z.shape),
+            float(hit_z.min().item()),
+            float(hit_z.max().item()),
+            float(hit_z.mean().item()),
+            float(hit_z.std().item()),
+        )
+        print(
+            "[OBS-DEBUG] raw height_scan=sensor_z-hit_z-0.5 shape/min/max/mean/std:",
+            tuple(raw_height_scan.shape),
+            float(raw_height_scan.min().item()),
+            float(raw_height_scan.max().item()),
+            float(raw_height_scan.mean().item()),
+            float(raw_height_scan.std().item()),
+        )
+
+        policy_obs = transition.get("observation")
+        if not isinstance(policy_obs, torch.Tensor):
+            return
+
+        hs = policy_obs[..., self._height_scan_start : self._height_scan_start + self._height_scan_size]
+        print(
+            "[OBS-DEBUG] height_scan slice shape/min/max/mean/std:",
+            tuple(hs.shape),
+            float(hs.min().item()),
+            float(hs.max().item()),
+            float(hs.mean().item()),
+            float(hs.std().item()),
+        )
+        _print_height_scan_values(hs, self.print_values, self.print_grid)
+
+
+def _format_float_list(values: torch.Tensor) -> str:
+    return "[" + ", ".join(f"{float(value):.6f}" for value in values.detach().cpu().flatten()) + "]"
+
+
+def _print_height_scan_values(height_scan: torch.Tensor, print_values: bool, print_grid: bool):
+    if not print_values and not print_grid:
+        return
+
+    first_env_hs = height_scan[0].detach().cpu().flatten()
+    if print_values:
+        print("[OBS-DEBUG] height_scan flat values:")
+        print(_format_float_list(first_env_hs))
+    if print_grid:
+        if first_env_hs.numel() != 187:
+            print(f"[OBS-DEBUG] height_scan grid skipped: expected 187 values, got {first_env_hs.numel()}")
+            return
+        print("[OBS-DEBUG] height_scan grid values (11 rows x 17 cols, x changes fastest):")
+        for row in first_env_hs.reshape(11, 17):
+            print(_format_float_list(row))
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -191,6 +301,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                         float(hs.mean().item()),
                         float(hs.std().item()),
                     )
+                    _print_height_scan_values(hs, args_cli.debug_obs_values, args_cli.debug_obs_grid)
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
@@ -222,6 +333,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     if args_cli.keyboard:
         player.register_hook(CameraFollowPlayerHook())
+    if args_cli.debug_obs:
+        player.register_hook(
+            HeightScanDebugPlayerHook(
+                interval=args_cli.debug_obs_interval,
+                print_values=args_cli.debug_obs_values,
+                print_grid=args_cli.debug_obs_grid,
+            )
+        )
 
     # run playing loop
     player.run_playing_loop()
