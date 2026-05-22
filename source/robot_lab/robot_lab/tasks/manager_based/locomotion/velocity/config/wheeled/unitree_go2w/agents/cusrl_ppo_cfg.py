@@ -9,6 +9,14 @@ from cusrl.environment.isaaclab import TrainerCfg
 from robot_lab.cusrl_heightmap_relate import HeightMapEncoderMlp
 
 
+def make_observation_normalization_hooks():
+    """CusRL observation preprocessing shared by Go2W policy configs."""
+    return [
+        cusrl.hook.ObservationNanToNum(),
+        cusrl.hook.ObservationNormalization(renormalize=True),
+    ]
+
+
 @dataclass
 class UnitreeGo2WRoughTrainerCfg(TrainerCfg):
     max_iterations = 20000
@@ -32,6 +40,7 @@ class UnitreeGo2WRoughTrainerCfg(TrainerCfg):
         optimizer_factory=cusrl.OptimizerFactory("AdamW", defaults={"lr": 1.0e-3}),
         sampler=cusrl.AutoMiniBatchSampler(num_epochs=5, num_mini_batches=4),
         hooks=[
+            *make_observation_normalization_hooks(),
             cusrl.hook.ValueComputation(),
             cusrl.hook.GeneralizedAdvantageEstimation(gamma=0.99, lamda=0.95),
             cusrl.hook.AdvantageNormalization(),
@@ -73,6 +82,7 @@ class UnitreeGo2WRoughTrainerRslAlignedCfg(TrainerCfg):
         optimizer_factory=cusrl.OptimizerFactory("Adam", defaults={"lr": 1.0e-3}),
         sampler=cusrl.AutoMiniBatchSampler(num_epochs=5, num_mini_batches=4),
         hooks=[
+            *make_observation_normalization_hooks(),
             cusrl.hook.ValueComputation(),
             cusrl.hook.GeneralizedAdvantageEstimation(gamma=0.99, lamda=0.95),
             cusrl.hook.AdvantageNormalization(),
@@ -120,6 +130,7 @@ class UnitreeGo2WRoughTrainerHeightMapEncoderCfg(TrainerCfg):
         optimizer_factory=cusrl.OptimizerFactory("Adam", defaults={"lr": 1.0e-3}),
         sampler=cusrl.AutoMiniBatchSampler(num_epochs=5, num_mini_batches=4),
         hooks=[
+            *make_observation_normalization_hooks(),
             cusrl.hook.ValueComputation(),
             cusrl.hook.GeneralizedAdvantageEstimation(gamma=0.99, lamda=0.95),
             cusrl.hook.AdvantageNormalization(),
