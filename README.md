@@ -4,7 +4,7 @@
 
 ## 这次主要改了什么
 
-这次整理了三类改动：
+这次整理了四类改动：
 
 - 新增了 `cusrl_rsl_aligned` 训练配置  
   目的：让 Go2W 的 CusRL 配方更接近已经验证有效的 RSL 风格配置。
@@ -14,6 +14,9 @@
 
 - 新增并接入了一个 hip 回中 reward  
   目的：约束 hip 不要在上楼时乱摆，让腿部姿态更稳定。
+
+- 接入了 CusRL 的 `ObservationNormalization`
+  目的：让 Go2W 的 CusRL 配置使用 running mean/std 归一化整条 policy/critic observation，其中 rough 环境的 `height_scan` 也会作为 observation 的一部分被逐维归一化。
 
 ## 当前效果
 
@@ -54,6 +57,40 @@ python /home/applepie/project_for_test/go2w_demo/robot_lab/scripts/reinforcement
 ```bash
 --run_name hip_default_pos_m005
 ```
+
+## CusRL 观测归一化
+
+这次在 Go2W 的 CusRL agent 配置中统一加入了 observation preprocessing hooks：
+
+```python
+cusrl.hook.ObservationNanToNum()
+cusrl.hook.ObservationNormalization(renormalize=True)
+```
+
+改动文件：
+
+```text
+source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/agents/cusrl_ppo_cfg.py
+```
+
+已覆盖的训练入口：
+
+- `cusrl_cfg_entry_point`
+- `cusrl_rsl_aligned_cfg_entry_point`
+- `cusrl_heightmap_cfg_entry_point`
+
+它参考 CusRL 的 `cusrl/hook/mdp/observation.py` 工作方式：先用 `ObservationNanToNum` 把 observation/state 中的 NaN/Inf 清成 0，再由 `ObservationNormalization` 在训练时维护 observation/state 的 running mean/std，在 `pre_act` 和 `post_step` 阶段把 `observation`、`state`、`next_observation`、`next_state` 替换成归一化后的张量，同时保留 `original_*` 原始值。
+
+这里显式使用 `renormalize=True`，目的是在 objective 阶段用最新 running mean/std 重新归一化保存下来的 `original_*` 张量，避免采样阶段和更新阶段统计量变化造成 batch 内 observation 使用旧归一化值。
+
+对 Go2W rough 环境来说，`height_scan` 在 `velocity_env_cfg.py` 的 `ObservationsCfg.PolicyCfg` / `CriticCfg` 中是拼接 observation 的最后一项，尺寸来自 `height_scanner` 的 11 x 17 网格，也就是 187 维。因此启用 `ObservationNormalization` 后：
+
+- 本体状态、关节状态、上一时刻动作等普通观测会被逐维归一化
+- `height_scan` 的 187 个采样点也会被当作普通 observation 维度逐维归一化
+- `cusrl_heightmap_cfg_entry_point` 中的 `HeightMapEncoderMlp` 接收到的是已经归一化后的完整 observation，再从末尾切出 187 维 `height_scan` 做 CNN 编码
+- 导出 ONNX/JIT 时，CusRL 会通过 hook 的 `pre_export` 把 `observation_rms` 写进 actor graph，所以 Stepit 侧应输入与训练时同语义、同单位、同展开顺序的原始 observation，而不是再次手动套一套训练统计量归一化
+
+这不是高程图专用的 min-max 或二维图像归一化，而是 CusRL 通用的逐维 running mean/std。flat 环境中 `height_scan` 已经被置为 `None`，所以 flat 只会归一化剩余 observation 维度。
 
 ## RSL-RL 环境排查记录
 
