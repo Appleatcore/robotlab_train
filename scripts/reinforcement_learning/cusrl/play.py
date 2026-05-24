@@ -331,8 +331,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     player.agent.export(output_dir=export_model_dir, target_format="onnx", verbose=args_cli.verbose)
     player.agent.export(output_dir=export_model_dir, target_format="jit", verbose=args_cli.verbose)
 
-    if args_cli.keyboard:
-        player.register_hook(CameraFollowPlayerHook())
+    # if args_cli.keyboard:
+        # player.register_hook(CameraFollowPlayerHook())
     if args_cli.debug_obs:
         player.register_hook(
             HeightScanDebugPlayerHook(
