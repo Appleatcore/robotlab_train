@@ -196,6 +196,13 @@ bash scripts/tools/rsync_robotlab_results_from_server.sh
 
 如果训练结果还在服务器上，不想先回传到本地，可以直接通过 SSH 端口转发在本地浏览器查看 TensorBoard。
 
+* 直接本地一行，下面不用看了
+
+  ```
+  ssh -L 6011:127.0.0.1:6011 ycl@10.12.120.237 -p 11222 \
+      'bash -lc "source ~/miniconda3/etc/profile.d/conda.sh && conda activate env_isaaclab && cd ~/workspace/robotlab_train && tensorboard --logdir ./logs --host 127.0.0.1 --port 6011"'
+  ```
+
 1. 在服务器 `venus` 上启动 TensorBoard：
 
 ```bash
