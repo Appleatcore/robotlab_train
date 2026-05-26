@@ -80,8 +80,8 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # ------------------------------Sence------------------------------
         self.scene.robot = UNITREE_GO2W_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot.spawn.usd_dir = "/tmp/IsaacLab_ycl/unitree_go2w"
-        # Radar is imported under base ("/Robot/base/radar"), so bind scanner there.
-        self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/" + self.base_link_name + "/" + self.radar_link_name
+        # Expand the terrain heightmap from the robot base link.
+        self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/" + self.base_link_name
         # Keep the base-centered scanner for base-height related shaping terms.
         self.scene.height_scanner_base.prim_path = "{ENV_REGEX_NS}/Robot/" + self.base_link_name
 
@@ -103,6 +103,8 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # perception upper bound: keep height_scan enabled for policy
         self.observations.policy.joint_pos.params["asset_cfg"].joint_names = self.joint_names
         self.observations.policy.joint_vel.params["asset_cfg"].joint_names = self.joint_names
+        self.observations.policy.height_scan.func=mdp.height_scan_norm
+        self.observations.critic.height_scan.func=mdp.height_scan_norm
 
         # ------------------------------Actions------------------------------
         # V3 keeps moderate leg authority; over-large scales made early policies noisy and hard to track.
@@ -175,11 +177,11 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.joint_power.params["asset_cfg"].joint_names = self.leg_joint_names
         self.rewards.stand_still.weight = -1.0
         self.rewards.stand_still.params["asset_cfg"].joint_names = self.leg_joint_names
-        self.rewards.joint_pos_penalty.weight = -0.2
+        self.rewards.joint_pos_penalty.weight = -0.15
         self.rewards.joint_pos_penalty.params["asset_cfg"].joint_names = self.leg_joint_names
         self.rewards.default_hip_joint_pos.weight = -0.01
         self.rewards.default_hip_joint_pos.params["hip_asset_cfg"].joint_names = self.hip_joint_names
-        self.rewards.wheel_vel_penalty.weight = -0.0015
+        self.rewards.wheel_vel_penalty.weight = -0.0020
         self.rewards.wheel_vel_penalty.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.wheel_vel_penalty.params["asset_cfg"].joint_names = self.wheel_joint_names
         self.rewards.joint_mirror.weight = -0.005
@@ -218,7 +220,7 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.feet_height.weight = 0
         self.rewards.feet_height.params["target_height"] = 0.1
         self.rewards.feet_height.params["asset_cfg"].body_names = [self.foot_link_name]
-        self.rewards.feet_height_body.weight = 0
+        self.rewards.feet_height_body.weight = -0.2
         self.rewards.feet_height_body.params["target_height"] = -0.14
         self.rewards.feet_height_body.params["asset_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_gait.weight = 0
