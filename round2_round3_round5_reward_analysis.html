@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Round2 Round3 Round5 Analysis</title>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --panel: #fffaf0;
+      --ink: #1f2937;
+      --muted: #5b6472;
+      --line: #d7c9a8;
+      --accent: #8b5e34;
+      --accent-soft: #efe2c6;
+      --warn: #8f2d2d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, #f2dfb8 0, transparent 28%),
+        linear-gradient(180deg, #f8f4ec 0%, #f3ecdf 100%);
+      line-height: 1.65;
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 36px 20px 60px;
+    }
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 10px 30px rgba(80, 62, 31, 0.08);
+    }
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.25;
+    }
+    h1 { font-size: 32px; }
+    h2 {
+      font-size: 24px;
+      margin-top: 28px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--accent-soft);
+    }
+    h3 { font-size: 19px; margin-top: 24px; }
+    p { margin: 10px 0; }
+    .muted { color: var(--muted); }
+    .note, .warn, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      margin-top: 18px;
+    }
+    .warn {
+      border-color: #d9a0a0;
+      background: #fff3f3;
+    }
+    .formula {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      background: #f3ead7;
+      border: 1px solid #e2cfaa;
+      padding: 12px 14px;
+      border-radius: 10px;
+      overflow-x: auto;
+      margin: 12px 0;
+      white-space: pre-wrap;
+    }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      background: #f3ead7;
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      background: var(--panel);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(80, 62, 31, 0.06);
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--accent-soft);
+      font-weight: 700;
+    }
+    ul {
+      margin: 10px 0 0 20px;
+      padding: 0;
+    }
+    li { margin: 6px 0; }
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      margin-right: 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .foot {
+      margin-top: 32px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Round 2 / Round 3 / Round 5 奖励与训练项分析</h1>
+      <p class="muted">
+        基于 <code>README_go2w_cusrl_mirlab_borrow_plan.md</code> 的实验计划，
+        结合 <code>rough_env_cfg.py</code>、<code>velocity_env_cfg.py</code> 与 <code>mdp/rewards.py</code> 的实际实现整理。
+      </p>
+      <div class="note">
+        <span class="tag">总公式</span>
+        <p>环境每步回报可以抽象成：</p>
+        <div class="formula">R_t = Σ_i w_i * φ_i(s_t, a_t)</div>
+        <p>
+          其中 <code>w_i</code> 是权重，<code>φ_i</code> 是某个 reward term 的实际计算值。
+          <code>w_i &gt; 0</code> 表示鼓励，<code>w_i &lt; 0</code> 表示惩罚。
+        </p>
+      </div>
+    </section>
+
+    <h2>Round 2: 接触质量相关惩罚</h2>
+    <p>
+      Round 2 的主题不是“主动抬腿奖励”，而是把坏的接触行为罚得更明显：
+      少空转、少踢台阶、少滑脚。
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>项</th>
+          <th>公式</th>
+          <th>权重变化</th>
+          <th>具体含义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>wheel_vel_penalty</code></td>
+          <td>
+            <div class="formula">if moving:
+φ = Σ_i 1_air(i) * |qdot_i|
+else:
+φ = Σ_i |qdot_i|</div>
+          </td>
+          <td><code>-5e-4 -&gt; -0.0015</code></td>
+          <td>
+            惩罚轮子在离地时还高速转动，也惩罚静止时轮子乱转。
+            本质是在压制“空转”和无效轮速。
+          </td>
+        </tr>
+        <tr>
+          <td><code>feet_stumble</code></td>
+          <td>
+            <div class="formula">φ = 1[∃ foot_i, ||F_xy(i)|| &gt; 4 * |F_z(i)|] * g</div>
+          </td>
+          <td><code>-0.02 -&gt; -0.1</code></td>
+          <td>
+            当脚与近似竖直表面发生“横向撞击”时触发，
+            典型场景就是踢到台阶立面。
+            惩罚更大后，策略会更倾向避免“直接踢阶”。
+          </td>
+        </tr>
+        <tr>
+          <td><code>feet_slide</code></td>
+          <td>
+            <div class="formula">φ = Σ_i 1_contact(i) * ||v_foot_body_xy(i)|| * g</div>
+          </td>
+          <td><code>-0.02 -&gt; -0.05</code></td>
+          <td>
+            只在脚接触地面时统计，惩罚着地后的横向滑动。
+            它会推动脚着地点更稳，减少“拖着脚蹭过去”的行为。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card">
+      <h3>Round 2 的整体作用</h3>
+      <ul>
+        <li>不是直接奖励“抬腿更高”，而是惩罚差的接触模式。</li>
+        <li>如果这些惩罚太强，而没有对应的摆腿正激励，策略可能学成“更保守”。</li>
+        <li>因此这轮更像接触质量修正，而不是过台阶能力的直接塑形。</li>
+      </ul>
+    </div>
+
+    <h2>Round 3: 双层速度跟踪</h2>
+    <p>
+      Round 3 的重点是把单一的速度跟踪拆成“粗 tracking + 细 tracking”两层，
+      让上楼时机身速度更规整，而不是只有大方向上差不多就行。
+    </p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>项</th>
+          <th>公式</th>
+          <th>权重</th>
+          <th>具体含义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>track_lin_vel_xy_exp</code></td>
+          <td>
+            <div class="formula">φ = exp( - ||v_cmd_xy - v_body_xy||² / std² ) * g
+std = 0.5</div>
+          </td>
+          <td><code>1.5</code></td>
+          <td>
+            粗粒度线速度跟踪。只要机身速度整体方向和大小比较接近指令，就能拿到较高奖励。
+          </td>
+        </tr>
+        <tr>
+          <td><code>track_lin_vel_xy_exp_fine</code></td>
+          <td>
+            <div class="formula">φ = exp( - ||v_cmd_xy - v_body_xy||² / 0.2² ) * g</div>
+          </td>
+          <td><code>1.0</code></td>
+          <td>
+            细粒度线速度跟踪。因为 <code>std</code> 更小，误差稍大时奖励会掉得更快，
+            所以它更强调“精确贴着指令跑”。
+          </td>
+        </tr>
+        <tr>
+          <td><code>track_ang_vel_z_exp</code></td>
+          <td>
+            <div class="formula">φ = exp( - (ω_cmd_z - ω_body_z)² / std² ) * g</div>
+          </td>
+          <td><code>1.0</code></td>
+          <td>
+            约束偏航角速度跟踪，避免楼梯过程中转向和姿态控制发散。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card">
+      <h3>Round 3 的整体作用</h3>
+      <ul>
+        <li>不是增加碰撞类惩罚，而是加强“按命令稳定前进”的回报结构。</li>
+        <li>相比单独把 <code>track_lin_vel_xy_exp</code> 权重拉很高，双层 tracking 更不容易让 reward 被单一速度项主导。</li>
+        <li>对楼梯行为来说，这一轮更偏“速度品质”和“机身运动规整性”。</li>
+      </ul>
+    </div>
+
+    <h2>Round 5: 主要不是奖励轮</h2>
+    <p>
+      Round 5 在文档里叫“借 MIRLab 的 CusRL hooks”，改的是 trainer hooks，
+      而不是环境里的 reward term。
+    </p>
+
+    <div class="warn">
+      <strong>关键点：</strong>
+      Round 5 严格说不是奖励设计轮。它主要影响的是训练稳定性、输入分布和数据利用方式，
+      而不是直接改环境回报函数。
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Hook</th>
+          <th>近似公式/机制</th>
+          <th>含义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>ObservationNormalization()</code></td>
+          <td>
+            <div class="formula">obs_norm = (obs - mean) / (std + eps)</div>
+          </td>
+          <td>
+            归一化观测，减少不同量纲和不同数值范围对 PPO 优化的干扰。
+            这会改变策略“看到”的输入分布，但不是 reward。
+          </td>
+        </tr>
+        <tr>
+          <td><code>SymmetricDataAugmentation()</code></td>
+          <td>
+            <div class="formula">利用左右镜像样本扩充 on-policy 数据</div>
+          </td>
+          <td>
+            让策略更容易学到左右对称的动作模式，提高样本利用效率。
+            它不改环境打分规则。
+          </td>
+        </tr>
+        <tr>
+          <td><code>EntropyLoss(weight=0.01)</code></td>
+          <td>
+            <div class="formula">L_entropy = -β * H(π),  β = 0.01</div>
+          </td>
+          <td>
+            这是训练目标中的熵正则，用来保持探索，防止策略过早塌缩。
+            它也不是环境 reward，而是优化器里的附加损失项。
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card">
+      <h3>Round 5 的整体作用</h3>
+      <ul>
+        <li>让训练过程更稳，不是让环境“直接更奖励抬腿”。</li>
+        <li>如果前面 reward 本身就把策略推向保守，Round 5 最多是更稳定地学到这个保守解。</li>
+        <li>所以 Round 5 解决的是“怎么学”，不是“学什么”。</li>
+      </ul>
+    </div>
+
+    <h2>三轮对照结论</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>轮次</th>
+          <th>主要改动类型</th>
+          <th>更偏向解决什么问题</th>
+          <th>局限</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Round 2</td>
+          <td>接触类惩罚更强</td>
+          <td>减少踢阶、滑脚、空转</td>
+          <td>不直接奖励“主动抬腿”</td>
+        </tr>
+        <tr>
+          <td>Round 3</td>
+          <td>速度跟踪更分层</td>
+          <td>让上楼时的机身速度更规整、更贴指令</td>
+          <td>不直接塑形脚的越障高度</td>
+        </tr>
+        <tr>
+          <td>Round 5</td>
+          <td>trainer hooks</td>
+          <td>提升训练稳定性和样本效率</td>
+          <td>本质上不是 reward 修改</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <h3>一句话判断</h3>
+      <p>
+        如果你的目标是“机器人看到大高度差后主动抬腿上楼”，
+        那么 Round 2 更像是在罚坏接触，Round 3 更像是在修速度品质，
+        Round 5 更像是在修训练流程；
+        它们都不是最直接的“抬腿高度塑形”项。
+      </p>
+    </div>
+
+    <p class="foot">
+      文件位置：
+      <code>/home/applepie/project_for_test/go2w_demo/robot_lab/round2_round3_round5_reward_analysis.html</code>
+    </p>
+  </div>
+</body>
+</html>
