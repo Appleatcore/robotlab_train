@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=go2w_hscan_norm_2gpu
+#SBATCH --job-name=go2w_hmap_lstm_2gpu
 #SBATCH --partition=rtx4090
 #SBATCH --gres=gpu:rtx4090d:2
 #SBATCH --cpus-per-task=16
@@ -27,5 +27,5 @@ torchrun --standalone --nproc_per_node=2 \
   --agent cusrl_heightmap_cfg_entry_point \
   --num_envs 8192 \
   --max_iterations 60000 \
-  --run_name baselink_hscan_norm \
+  --run_name hmap_lstm_new_cfg \
   --headless
