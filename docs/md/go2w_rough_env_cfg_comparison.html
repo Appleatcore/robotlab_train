@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go2W rough_env_cfg 对比分析</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --panel: #fffaf2;
+      --ink: #1f2933;
+      --muted: #5c6670;
+      --line: #dbc8a9;
+      --accent: #8a5a2b;
+      --accent-soft: #f0e1c5;
+      --warn: #8c2f39;
+      --good: #355e3b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top right, #f5dfb6 0, transparent 24%),
+        linear-gradient(180deg, #f8f4ed 0%, #f1eadf 100%);
+      line-height: 1.68;
+    }
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 60px;
+    }
+    .hero, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 12px 28px rgba(71, 52, 26, 0.08);
+    }
+    .hero {
+      padding: 28px;
+      margin-bottom: 24px;
+    }
+    .panel {
+      padding: 22px 24px;
+      margin-top: 20px;
+    }
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.25;
+    }
+    h1 { font-size: 32px; }
+    h2 {
+      margin-top: 30px;
+      padding-bottom: 8px;
+      font-size: 24px;
+      border-bottom: 2px solid var(--accent-soft);
+    }
+    h3 { font-size: 18px; margin-top: 22px; }
+    p { margin: 10px 0; }
+    ul {
+      margin: 8px 0 0 20px;
+      padding: 0;
+    }
+    li { margin: 6px 0; }
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      background: #f3ead8;
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+    .muted { color: var(--muted); }
+    .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      margin-right: 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .good {
+      color: var(--good);
+      font-weight: 700;
+    }
+    .warn {
+      color: var(--warn);
+      font-weight: 700;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      background: var(--panel);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 11px 13px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th {
+      background: var(--accent-soft);
+      font-weight: 700;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .summary .panel {
+      margin-top: 0;
+      padding: 18px;
+    }
+    .mono {
+      white-space: pre-wrap;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      background: #f3ead8;
+      border: 1px solid #e1d0b0;
+      padding: 12px 14px;
+      border-radius: 10px;
+    }
+    .foot {
+      margin-top: 28px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>Go2W <code>rough_env_cfg.py</code> 对比分析</h1>
+      <p class="muted">
+        对比对象：
+      </p>
+      <ul>
+        <li>原始版本：<code>/home/applepie/project_for_test/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/rough_env_cfg.py</code></li>
+        <li>当前工作区版本：<code>/home/applepie/project_for_test/go2w_demo/robot_lab/source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/wheeled/unitree_go2w/rough_env_cfg.py</code></li>
+      </ul>
+      <div class="summary">
+        <div class="panel">
+          <span class="tag">结论</span>
+          <p>当前版本已经不是“小修小补”，而是从原始的 <strong>无高程图 policy + 更保守的 reward 基线</strong>，演化成了 <strong>带高程图输入 + 更温和 reset + 接触质量/执行平滑/非法接触约束</strong> 的训练分支。</p>
+        </div>
+        <div class="panel">
+          <span class="tag">主变化</span>
+          <p>最大变化集中在五块：<code>height_scan</code>、动作尺度、reset 分布、reward 重构、<code>illegal_contact</code> 启用。</p>
+        </div>
+        <div class="panel">
+          <span class="tag">风险点</span>
+          <p><code>radar_link_name</code> 在当前文件里被新增但未实际使用；<code>usd_dir=/tmp/IsaacLab_ycl/unitree_go2w</code> 也是环境相关改动，迁移机器时要额外注意。</p>
+        </div>
+      </div>
+    </section>
+
+    <h2>1. 场景与感知配置</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>项</th>
+          <th>原始版本</th>
+          <th>当前版本</th>
+          <th>分析</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>radar_link_name</code></td>
+          <td>无</td>
+          <td><code>"radar"</code></td>
+          <td>新增了字段，但这个文件中没有继续用它绑定扫描器。当前实际生效的扫描器依然挂在 <code>base_link_name</code> 上。</td>
+        </tr>
+        <tr>
+          <td><code>scene.robot.spawn.usd_dir</code></td>
+          <td>无</td>
+          <td><code>/tmp/IsaacLab_ycl/unitree_go2w</code></td>
+          <td>这是一个本地环境路径覆盖。它不是训练逻辑参数，但会影响资源加载和复现实验环境。</td>
+        </tr>
+        <tr>
+          <td><code>height_scanner.prim_path</code></td>
+          <td><code>/Robot/base</code></td>
+          <td><code>/Robot/base</code></td>
+          <td>扫描中心没有变，仍然从 <code>base</code> 展开高程图。</td>
+        </tr>
+        <tr>
+          <td><code>policy.height_scan</code></td>
+          <td><code>None</code></td>
+          <td>启用</td>
+          <td><span class="good">这是最关键的结构性变化。</span> 原始版本 policy 不看高程图，当前版本让 actor 也直接吃 <code>height_scan</code>。</td>
+        </tr>
+        <tr>
+          <td><code>height_scan.func</code></td>
+          <td>默认</td>
+          <td><code>mdp.height_scan_norm</code></td>
+          <td>当前版本不仅打开了高程图，还把 policy / critic 的高程图输入都换成了归一化版本。这说明当前分支明显在做“感知参与决策”的路线。</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="panel">
+      <h3>这一块的行为含义</h3>
+      <ul>
+        <li>原始版本更接近“不依赖地形前瞻”的控制基线。</li>
+        <li>当前版本让策略能提前看到高度落差，因此更容易出现“遇到台阶先犹豫/冻结”的现象，因为风险被看见了。</li>
+        <li>如果 reward 没有同步给出足够的越障正激励，高程图会把策略推向“保守但安全”的局部最优。</li>
+      </ul>
+    </div>
+
+    <h2>2. 动作尺度与 reset 分布</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>项</th>
+          <th>原始版本</th>
+          <th>当前版本</th>
+          <th>分析</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>joint_pos.scale</code></td>
+          <td><code>hip=0.125, other=0.25</code></td>
+          <td><code>hip=0.15, other=0.3</code></td>
+          <td>当前版本给腿部更大的控制幅度，说明希望增加 clearance 和越障动作能力，但又没有放大到很激进的程度。</td>
+        </tr>
+        <tr>
+          <td><code>reset pose z</code></td>
+          <td><code>(0.0, 0.2)</code></td>
+          <td><code>(0.0, 0.05)</code></td>
+          <td>reset 高度随机性显著减小，减少“掉下来再恢复”的训练成分。</td>
+        </tr>
+        <tr>
+          <td><code>reset roll/pitch</code></td>
+          <td><code>(-3.14, 3.14)</code></td>
+          <td><code>(0.0, 0.0)</code></td>
+          <td><span class="good">当前版本明显更温和。</span> 不再让策略花大量容量学习大姿态恢复，更聚焦正常运动和楼梯行为。</td>
+        </tr>
+        <tr>
+          <td><code>reset vel z/roll/pitch</code></td>
+          <td><code>(-0.5, 0.5)</code></td>
+          <td><code>(-0.2, 0.2)</code></td>
+          <td>同样是在弱化暴力 reset，减少 recovery policy 成分。</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="panel">
+      <h3>这一块的行为含义</h3>
+      <ul>
+        <li>原始版本更像“鲁棒恢复能力优先”的 rough 训练设置。</li>
+        <li>当前版本把训练分布收窄，更像“把能力集中在运动控制和越障细节”上。</li>
+        <li>这通常会让前期课程更稳，但也会减少对极端姿态恢复的覆盖。</li>
+      </ul>
+    </div>
+
+    <h2>3. Reward 差异总览</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Reward 项</th>
+          <th>原始版本</th>
+          <th>当前版本</th>
+          <th>倾向变化</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>flat_orientation_l2</code></td><td>0</td><td><code>-0.1</code></td><td>更强调机身姿态平稳</td></tr>
+        <tr><td><code>joint_vel_l2</code></td><td>0</td><td><code>-5e-4</code></td><td>更强调腿部速度别太大</td></tr>
+        <tr><td><code>joint_vel_wheel_l2</code></td><td>0</td><td><code>-5e-5</code></td><td>对轮速也加了轻惩罚</td></tr>
+        <tr><td><code>joint_pos_limits</code></td><td><code>-5.0</code></td><td><code>-2.0</code></td><td>放松关节限位惩罚</td></tr>
+        <tr><td><code>joint_power</code></td><td><code>-2e-5</code></td><td><code>-1e-5</code></td><td>放松能耗惩罚</td></tr>
+        <tr><td><code>stand_still</code></td><td><code>-2.0</code></td><td><code>-1.0</code></td><td>减弱“静止时回默认位姿”约束</td></tr>
+        <tr><td><code>joint_pos_penalty</code></td><td><code>-1.0</code></td><td><code>-0.15</code></td><td>大幅放松默认位姿惩罚</td></tr>
+        <tr><td><code>default_hip_joint_pos</code></td><td>无</td><td><code>-0.01</code></td><td>新增轻量 hip 约束</td></tr>
+        <tr><td><code>wheel_vel_penalty</code></td><td>0</td><td><code>-0.0020</code></td><td>新增轮子空转/离地乱转约束</td></tr>
+        <tr><td><code>joint_mirror</code></td><td><code>-0.05</code></td><td><code>-0.005</code></td><td>大幅减弱镜像约束</td></tr>
+        <tr><td><code>contact_forces</code></td><td><code>-1.5e-4</code></td><td><code>-7e-5</code></td><td>放松落脚冲击惩罚</td></tr>
+        <tr><td><code>track_lin_vel_xy_exp</code></td><td><code>3.0</code></td><td><code>1.5</code></td><td>粗 tracking 权重减半</td></tr>
+        <tr><td><code>track_lin_vel_xy_exp_fine</code></td><td>无</td><td><code>1.0</code></td><td>新增精细 tracking</td></tr>
+        <tr><td><code>track_ang_vel_z_exp</code></td><td><code>1.5</code></td><td><code>1.0</code></td><td>轻微下调偏航 tracking</td></tr>
+        <tr><td><code>feet_stumble</code></td><td>0</td><td><code>-0.1</code></td><td>开始明确惩罚踢台阶/撞立面</td></tr>
+        <tr><td><code>feet_slide</code></td><td>0</td><td><code>-0.05</code></td><td>开始明确惩罚滑脚</td></tr>
+        <tr><td><code>feet_height_body</code></td><td>0</td><td><code>-0.2</code></td><td>开始给摆腿高度塑形</td></tr>
+        <tr><td><code>feet_height_body.target</code></td><td><code>-0.2</code></td><td><code>-0.14</code></td><td>目标更接近机身，等价于希望脚抬得更高</td></tr>
+        <tr><td><code>upward</code></td><td><code>1.0</code></td><td><code>0.2</code></td><td>显著减弱“强保持 upright” 的奖励</td></tr>
+      </tbody>
+    </table>
+
+    <div class="panel">
+      <h3>Reward 结构变化的核心逻辑</h3>
+      <ul>
+        <li>原始版本整体上更像：<strong>强 tracking、强默认姿态约束、无感知 policy</strong>。</li>
+        <li>当前版本更像：<strong>弱化硬性的姿态/能耗/镜像约束，加入 perception 后补上接触质量和摆腿高度项</strong>。</li>
+        <li>这说明当前分支的目标，不再只是“平地把速度跟住”，而是开始兼顾“看到台阶后的行为质量”。</li>
+      </ul>
+    </div>
+
+    <h2>4. 当前版本最重要的几类行为改变</h2>
+
+    <div class="panel">
+      <h3>4.1 从“速度主导”变成“速度 + 接触质量 + 摆腿”混合主导</h3>
+      <p>
+        原始版本里 <code>track_lin_vel_xy_exp=3.0</code>、<code>track_ang_vel_z_exp=1.5</code>，
+        同时 <code>feet_stumble</code>、<code>feet_slide</code>、<code>wheel_vel_penalty</code> 都没有真正介入。
+        当前版本则把 tracking 拆成粗细两层，并开始引入接触质量和摆腿高度塑形。
+      </p>
+      <p>
+        这意味着当前版本更容易学到“前进不能只看速度，还要少踢阶、少滑脚、摆腿更合适”。
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>4.2 从“强默认位姿约束”变成“允许更多越障动作”</h3>
+      <p>
+        <code>joint_pos_penalty</code> 从 <code>-1.0</code> 降到 <code>-0.15</code>，
+        <code>joint_pos_limits</code> 从 <code>-5.0</code> 降到 <code>-2.0</code>，
+        <code>joint_mirror</code> 从 <code>-0.05</code> 降到 <code>-0.005</code>。
+      </p>
+      <p>
+        这些变化整体是在告诉策略：为了越障，可以接受更大的腿部偏离和更不那么“教科书式对称”的动作。
+      </p>
+    </div>
+
+    <div class="panel">
+      <h3>4.3 但同时又引入了“看见风险就保守”的潜在诱因</h3>
+      <p>
+        当前版本打开了 <code>height_scan</code>，并新增：
+      </p>
+      <ul>
+        <li><code>feet_stumble=-0.1</code></li>
+        <li><code>feet_slide=-0.05</code></li>
+        <li><code>wheel_vel_penalty=-0.0020</code></li>
+        <li><code>illegal_contact(base, threshold=20.0)</code></li>
+      </ul>
+      <p>
+        这会让策略更清楚地意识到“大高度落差是危险的”。如果正向越障激励不够强，它就可能学出“停住比硬上更划算”的保守解。
+      </p>
+    </div>
+
+    <h2>5. 终止条件变化</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>项</th>
+          <th>原始版本</th>
+          <th>当前版本</th>
+          <th>分析</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>illegal_contact</code></td>
+          <td>关闭</td>
+          <td>启用，监控 <code>base</code>，阈值 <code>20.0</code></td>
+          <td>当前版本开始把 base 撞击纳入提前终止逻辑。这通常会减少“趴着硬顶台阶”的样本，但也会增加策略的保守性。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>6. 综合判断</h2>
+    <div class="panel">
+      <h3>总体结论</h3>
+      <ul>
+        <li>原始版本是一个更典型的 rough locomotion 基线：不让 policy 看高程图，tracking 权重大，默认姿态和限位约束较重，非法接触关闭。</li>
+        <li>当前版本已经明显转向“感知参与控制”的楼梯/越障训练分支。</li>
+        <li>当前参数组合的设计思路是合理的：打开高程图、弱化一部分过硬的姿态约束、补上接触质量项和轻量摆腿高度项。</li>
+        <li>但它也天然更容易出现“看见危险后停止前进”的局部最优，因为当前分支已经把风险信息和风险惩罚都补上了。</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>我认为最值得关注的三处</h3>
+      <ul>
+        <li><strong>最结构性的变化：</strong> <code>policy.height_scan</code> 从关闭变成开启，并做了 <code>height_scan_norm</code>。</li>
+        <li><strong>最容易解释行为变化的变化：</strong> <code>illegal_contact</code> 启用 + <code>feet_stumble</code> / <code>feet_slide</code> 从 0 变为负值。</li>
+        <li><strong>最能改变腿部越障自由度的变化：</strong> <code>joint_pos_penalty</code>、<code>joint_pos_limits</code>、<code>joint_mirror</code> 的放松，以及 <code>feet_height_body</code> 的引入。</li>
+      </ul>
+    </div>
+
+    <div class="panel">
+      <h3>一个额外提醒</h3>
+      <p>
+        当前版本里 <code>radar_link_name = "radar"</code> 被加进来了，但这份配置文件没有实际用它去绑定扫描器。
+        真正决定高程图展开位置的仍然是：
+      </p>
+      <div class="mono">self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/" + self.base_link_name</div>
+      <p>
+        所以就这份文件本身来看，当前高程图仍然是从 <code>base</code> link 展开的，不是从 <code>radar</code> link 展开。
+      </p>
+    </div>
+
+    <p class="foot">
+      输出文件：<code>/home/applepie/project_for_test/go2w_demo/robot_lab/go2w_rough_env_cfg_comparison.html</code>
+    </p>
+  </div>
+</body>
+</html>
