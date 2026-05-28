@@ -18,6 +18,7 @@ rsync -avz \
   -e "ssh -p 11222" \
   --prune-empty-dirs \
   --include='*/' \
+  --include='/*.md' \
   --exclude='logs/*.out' \
   --exclude='logs/*.err' \
   --exclude='**/logs/*.out' \
