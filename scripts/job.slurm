@@ -27,5 +27,5 @@ torchrun --standalone --nproc_per_node=2 \
   --agent cusrl_heightmap_cfg_entry_point \
   --num_envs 8192 \
   --max_iterations 60000 \
-  --run_name hmap_lstm_new_cfg \
+  --run_name hmap_lstm_new_cfg_fstumble_m04_no_fhbody_flat_ori_m2 \
   --headless
