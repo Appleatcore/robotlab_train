@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 import torch
 from torch import nn
 
-from cusrl.module.mlp import Mlp
 from cusrl.module.module import Module, ModuleFactory
+from cusrl.module.rnn import Lstm
 
 
 @dataclass(slots=True)
 class HeightMapEncoderMlpFactory(ModuleFactory["HeightMapEncoderMlp"]):
-    hidden_dims: Iterable[int] = (512, 256, 128)
     activation_fn: str | type[nn.Module] = "ELU"
-    ends_with_activation: bool = True
+    hidden_size: int = 256
+    num_layers: int = 2
+    bias: bool = True
     dropout: float = 0.0
     heightmap_shape: tuple[int, int] = (11, 17)
     heightmap_channels: int = 1
@@ -28,9 +28,10 @@ class HeightMapEncoderMlpFactory(ModuleFactory["HeightMapEncoderMlp"]):
         return HeightMapEncoderMlp(
             input_dim=input_dim,
             output_dim=output_dim,
-            hidden_dims=self.hidden_dims,
             activation_fn=self._resolve_activation_fn(self.activation_fn),
-            ends_with_activation=self.ends_with_activation,
+            hidden_size=self.hidden_size,
+            num_layers=self.num_layers,
+            bias=self.bias,
             dropout=self.dropout,
             heightmap_shape=self.heightmap_shape,
             heightmap_channels=self.heightmap_channels,
@@ -39,26 +40,23 @@ class HeightMapEncoderMlpFactory(ModuleFactory["HeightMapEncoderMlp"]):
 
 
 class HeightMapEncoderMlp(Module):
-    """先编码 observation 末尾的 height_scan，再拼回本体状态送入 MLP 的 CusRL backbone。"""
+    """Encode trailing height_scan, then feed proprioception + height latent into LSTM."""
 
     Factory = HeightMapEncoderMlpFactory
 
     def __init__(
         self,
         input_dim: int,
-        hidden_dims: Iterable[int],
         output_dim: int | None = None,
         activation_fn: type[nn.Module] = nn.ELU,
-        ends_with_activation: bool = True,
+        hidden_size: int = 256,
+        num_layers: int = 2,
+        bias: bool = True,
         dropout: float = 0.0,
         heightmap_shape: tuple[int, int] = (11, 17),
         heightmap_channels: int = 1,
         heightmap_latent_dim: int = 64,
     ):
-        hidden_dims = list(hidden_dims)
-        if not hidden_dims and output_dim is None:
-            raise ValueError("'hidden_dims' must be non-empty when 'output_dim' is None.")
-
         # Go2W rough 环境中 height_scan 默认拼在 observation 末尾：
         # 187 = 1 * 11 * 17。剩余前半部分视为 proprio/body observation。
         heightmap_shape = tuple(heightmap_shape)
@@ -70,8 +68,8 @@ class HeightMapEncoderMlp(Module):
                 f"input_dim={input_dim}, heightmap_size={heightmap_size}"
             )
 
-        mlp_output_dim = output_dim if output_dim is not None else hidden_dims[-1]
-        super().__init__(input_dim=input_dim, output_dim=mlp_output_dim, is_recurrent=False)
+        lstm_output_dim = output_dim if output_dim is not None else hidden_size
+        super().__init__(input_dim=input_dim, output_dim=lstm_output_dim, is_recurrent=True)
 
         self.proprio_dim = proprio_dim
         self.heightmap_shape = heightmap_shape
@@ -99,16 +97,23 @@ class HeightMapEncoderMlp(Module):
             nn.Linear(encoded_size, heightmap_latent_dim),
             activation_fn(),
         )
-        self.mlp = Mlp(
+        self.lstm = Lstm(
             input_dim=proprio_dim + heightmap_latent_dim,
-            hidden_dims=hidden_dims,
-            output_dim=output_dim,
-            activation_fn=activation_fn,
-            ends_with_activation=ends_with_activation,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            bias=bias,
             dropout=dropout,
+            output_dim=output_dim,
         )
 
-    def forward(self, observation: torch.Tensor, **kwargs) -> torch.Tensor:
+    def forward(
+        self,
+        observation: torch.Tensor,
+        memory=None,
+        done: torch.Tensor | None = None,
+        sequential: bool = True,
+        **kwargs,
+    ):
         if observation.shape[-1] != self.input_dim:
             raise ValueError(f"Expected observation dim {self.input_dim}, got {observation.shape[-1]}.")
 
@@ -128,6 +133,5 @@ class HeightMapEncoderMlp(Module):
         )
 
         height_latent = self.height_projector(self.height_encoder(height_scan))
-        # MLP 输入 = 原本体状态 + 高程图 latent；输出维度由 CusRL actor/critic 的 latent_dim 决定。
-        latent = self.mlp(torch.cat([proprio_obs, height_latent], dim=-1))
-        return latent.reshape(*leading_shape, self.output_dim)
+        lstm_input = torch.cat([proprio_obs, height_latent], dim=-1).reshape(*leading_shape, -1)
+        return self.lstm(lstm_input, memory=memory, done=done, sequential=sequential, **kwargs)

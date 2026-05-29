@@ -36,33 +36,16 @@ def phase(env: ManagerBasedRLEnv, cycle_time: float) -> torch.Tensor:
     return phase_tensor
 
 
-def height_scan_norm(env: ManagerBasedEnv, sensor_cfg: SceneEntityCfg, offset: float = 0.5) -> torch.Tensor:
-    """Height scan from the given sensor w.r.t. the sensor's frame.
-
-    The provided offset (Defaults to 0.5) is subtracted from the returned values.
-    """
-    # extract the used quantities (to enable type-hinting)
-    sensor: RayCaster = env.scene.sensors[sensor_cfg.name]
-    # height scan: height = sensor_height - hit_point_z - offset
-    height_scan_raw = sensor.data.pos_w[:, 2].unsqueeze(1) - sensor.data.ray_hits_w[..., 2] - offset
-    height_scan = height_scan_raw - torch.mean(height_scan_raw)
-    return height_scan
-
 def height_scan_norm(
     env: ManagerBasedEnv,
     sensor_cfg: SceneEntityCfg,
     offset: float = 0.5,
     clip: tuple[float, float] = (-1.0, 1.0),
 ) -> torch.Tensor:
-    """Height scan from the given sensor, centered per scan without std scaling.
-
-    CusRL's ObservationNormalization applies running mean/std later. Dividing by
-    the instantaneous scan std here can amplify tiny flat-ground noise.
-    """
-    # extract the used quantities (to enable type-hinting)
+    """Clip and batch-center height scan without std scaling."""
     sensor: RayCaster = env.scene.sensors[sensor_cfg.name]
-    # height scan: height = sensor_height - hit_point_z - offset
+    # height = sensor_z - terrain_z - offset
     height_scan_raw = sensor.data.pos_w[:, 2].unsqueeze(1) - sensor.data.ray_hits_w[..., 2] - offset
-    height_scan = torch.nan_to_num(height_scan_raw, nan=0.0, posinf=clip[1], neginf=clip[0])
-    height_scan = torch.clamp(height_scan, min=clip[0], max=clip[1])
-    return height_scan - height_scan.mean(dim=-1, keepdim=True)
+    height_scan_raw = torch.nan_to_num(height_scan_raw, nan=0.0, posinf=clip[1], neginf=clip[0])
+    height_scan_raw = torch.clamp(height_scan_raw, min=clip[0], max=clip[1])
+    return height_scan_raw - height_scan_raw.mean()

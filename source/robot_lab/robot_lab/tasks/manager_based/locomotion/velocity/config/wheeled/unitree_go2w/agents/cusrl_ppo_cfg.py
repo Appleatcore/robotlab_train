@@ -108,9 +108,9 @@ class UnitreeGo2WRoughTrainerHeightMapEncoderCfg(TrainerCfg):
         actor_factory=cusrl.Actor.Factory(
             # actor 和 critic 在 CusRL 中是两个独立模块，因此各自拥有一套 heightmap encoder。
             backbone_factory=HeightMapEncoderMlp.Factory(
-                hidden_dims=[512, 256, 128],
                 activation_fn="ELU",
-                ends_with_activation=True,
+                hidden_size=256,
+                num_layers=2,
                 heightmap_shape=(11, 17),
                 heightmap_channels=1,
                 heightmap_latent_dim=64,
@@ -119,9 +119,9 @@ class UnitreeGo2WRoughTrainerHeightMapEncoderCfg(TrainerCfg):
         ),
         critic_factory=cusrl.Value.Factory(
             backbone_factory=HeightMapEncoderMlp.Factory(
-                hidden_dims=[512, 256, 128],
                 activation_fn="ELU",
-                ends_with_activation=True,
+                hidden_size=256,
+                num_layers=2,
                 heightmap_shape=(11, 17),
                 heightmap_channels=1,
                 heightmap_latent_dim=64,
